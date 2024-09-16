@@ -1,0 +1,3 @@
+urls:
+  - http://influxdb1:8086
+  - http://influxdb2:8086

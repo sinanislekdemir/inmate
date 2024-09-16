@@ -1,0 +1,41 @@
+version: '3'
+
+services:
+  influxdb1:
+    image: influxdb:1.8
+    container_name: influxdb1
+    ports:
+      - 8086:8086
+    volumes:
+      - ./influxdb1:/var/lib/influxdb
+    environment:
+      - INFLUXDB_DB=db1
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_PASSWORD=password
+
+  influxdb2:
+    image: influxdb:1.8
+    container_name: influxdb2
+    ports:
+      - 8087:8086
+    volumes:
+      - ./influxdb2:/var/lib/influxdb
+    environment:
+      - INFLUXDB_DB=db2
+      - INFLUXDB_HTTP_AUTH_ENABLED=true
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_PASSWORD=password
+
+  inmate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inmate
+    ports:
+      - 8080:8080
+    volumes:
+      - ./config.yaml:/app/config.yaml
+    depends_on:
+      - influxdb1
+      - influxdb2
