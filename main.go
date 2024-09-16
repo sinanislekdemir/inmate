@@ -220,8 +220,11 @@ func sendRequestWithRetry(url string, queryValues url.Values, request *http.Requ
 	}
 	newReq.Header = request.Header.Clone()
 
+	// TODO: Implement exponential backoff and increase the max retries.
+	// We can even wait for the InfluxDB to be up and running before sending the requests.
+
 	retryCount := 0
-	maxRetries := 3
+	maxRetries := 60
 	for {
 		resp, err := client.Do(newReq.WithContext(request.Context()))
 		if err != nil {
@@ -253,8 +256,11 @@ func handleRequests(requests <-chan Payload, influxDBURL string) {
 		}
 		newReq.Header = req.Header.Clone()
 
+		// TODO: Implement exponential backoff and increase the max retries.
+		// We can even wait for the InfluxDB to be up and running before sending the requests.
+
 		retryCount := 0
-		maxRetries := 3
+		maxRetries := 60
 		for {
 			resp, err := client.Do(newReq)
 			if err != nil {
