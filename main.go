@@ -101,7 +101,7 @@ func handleHealthCheck(c *gin.Context) {
 
 func handlePing(instances []InfluxDBInstance) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		resp, err := sendRequestRandomInstance(instances, c.Request.URL.Path, c.Request.URL.Query(), c.Request, -1, 0)
+		resp, err := sendRequestRandomInstance(instances, c.Request.URL.Path, c.Request.URL.Query(), c.Request)
 		if err != nil {
 			handleError(c, err)
 			return
@@ -127,7 +127,7 @@ func handleQuery(instances []InfluxDBInstance) gin.HandlerFunc {
 			return
 		}
 
-		resp, err := sendRequestRandomInstance(instances, c.Request.URL.Path, queryParams, c.Request, -1, 0)
+		resp, err := sendRequestRandomInstance(instances, c.Request.URL.Path, queryParams, c.Request)
 		if err != nil {
 			log.Printf("Error sending request: %v\n", err)
 			handleError(c, err)
@@ -216,23 +216,23 @@ func handleError(c *gin.Context, err error) {
 	c.JSON(http.StatusInternalServerError, nil)
 }
 
-func sendRequestRandomInstance(instances []InfluxDBInstance, url string, queryValues url.Values, request *http.Request, index int, visits int) (*http.Response, error) {
-	choice := rand.Intn(len(instances))
-	if index != -1 {
-		choice = index
-	}
-	log.Printf("Visits: %d, Choice: %d\n", visits, choice)
-	if visits == len(instances) {
+func sendRequestRandomInstance(instances []InfluxDBInstance, url string, queryValues url.Values, request *http.Request) (*http.Response, error) {
+	if len(instances) == 0 {
 		return nil, fmt.Errorf("all instances are down")
 	}
-	randomInstance := instances[choice]
-	log.Printf("Sending request to %s\n", randomInstance.URL)
-	resp, err := sendRequestWithRetry(randomInstance.URL+url, queryValues, request, false)
+
+	choice := rand.Intn(len(instances))
+	instance := instances[choice]
+
+	// remove selected instance to prevent reselected againg.
+	instances = append(instances[:choice], instances[choice+1:]...)
+
+	log.Printf("Sending request to %s\n", instance.URL)
+	resp, err := sendRequestWithRetry(instance.URL+url, queryValues, request, false)
 	if err != nil {
-		choice = (choice + 1) % len(instances)
-		log.Printf("Instance %s is down. Trying instance %s\n", randomInstance.URL, instances[choice].URL)
-		return sendRequestRandomInstance(instances, url, queryValues, request, choice, visits+1)
+		return sendRequestRandomInstance(instances, url, queryValues, request)
 	}
+
 	return resp, err
 }
 
