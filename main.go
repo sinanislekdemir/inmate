@@ -16,11 +16,12 @@ import (
 )
 
 type InfluxDBConfig struct {
-	URLs        []string `yaml:"urls"`
-	Port        int      `yaml:"port"`
-	BindAddress string   `yaml:"bind_address"`
-	RetryDelay  int      `yaml:"retry_delay"`
-	RetryCount  int      `yaml:"retry_count"`
+	URLs         []string `yaml:"urls"`
+	Port         int      `yaml:"port"`
+	BindAddress  string   `yaml:"bind_address"`
+	RetryDelay   int      `yaml:"retry_delay"`
+	RetryCount   int      `yaml:"retry_count"`
+	QueryTimeout int      `yaml:"query_timeout"`
 }
 
 type Payload struct {
@@ -93,9 +94,7 @@ func handleWrite(instances []InfluxDBInstance) gin.HandlerFunc {
 
 func handlePing(instances []InfluxDBInstance) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		randomInstance := instances[rand.Intn(len(instances))]
-		url := randomInstance.URL + c.Request.URL.Path
-		resp, err := sendRequestWithRetry(url, c.Request.URL.Query(), c.Request)
+		resp, err := sendRequestRandomInstance(instances, c.Request.URL.Path, c.Request.URL.Query(), c.Request, -1, 0)
 		if err != nil {
 			handleError(c, err)
 			return
@@ -121,10 +120,9 @@ func handleQuery(instances []InfluxDBInstance) gin.HandlerFunc {
 			return
 		}
 
-		randomInstance := instances[rand.Intn(len(instances))]
-		url := randomInstance.URL + c.Request.URL.Path
-		resp, err := sendRequestWithRetry(url, queryParams, c.Request)
+		resp, err := sendRequestRandomInstance(instances, c.Request.URL.Path, queryParams, c.Request, -1, 0)
 		if err != nil {
+			log.Printf("Error sending request: %v\n", err)
 			handleError(c, err)
 			return
 		}
@@ -158,7 +156,7 @@ func handleMutation(c *gin.Context, instances []InfluxDBInstance) {
 
 	for _, instance := range instances {
 		url := instance.URL + c.Request.URL.Path
-		resp, err := sendRequestWithRetry(url, queryParams, c.Request)
+		resp, err := sendRequestWithRetry(url, queryParams, c.Request, true)
 		if err != nil {
 			handleError(c, err)
 			return
@@ -211,12 +209,33 @@ func handleError(c *gin.Context, err error) {
 	c.JSON(http.StatusInternalServerError, nil)
 }
 
-func sendRequestWithRetry(url string, queryValues url.Values, request *http.Request) (*http.Response, error) {
+func sendRequestRandomInstance(instances []InfluxDBInstance, url string, queryValues url.Values, request *http.Request, index int, visits int) (*http.Response, error) {
+	choice := rand.Intn(len(instances))
+	if index != -1 {
+		choice = index
+	}
+	log.Printf("Visits: %d, Choice: %d\n", visits, choice)
+	if visits == len(instances) {
+		return nil, fmt.Errorf("all instances are down")
+	}
+	randomInstance := instances[choice]
+	log.Printf("Sending request to %s\n", randomInstance.URL)
+	resp, err := sendRequestWithRetry(randomInstance.URL+url, queryValues, request, false)
+	if err != nil {
+		choice = (choice + 1) % len(instances)
+		log.Printf("Instance %s is down. Trying instance %s\n", randomInstance.URL, instances[choice].URL)
+		return sendRequestRandomInstance(instances, url, queryValues, request, choice, visits+1)
+	}
+	return resp, err
+}
+
+func sendRequestWithRetry(url string, queryValues url.Values, request *http.Request, enforce bool) (*http.Response, error) {
 	log.Printf("Sending request to %s with query values: %v\n", url, queryValues)
 	client := &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 		},
+		Timeout: time.Duration(config.QueryTimeout) * time.Second,
 	}
 	url += "?" + queryValues.Encode()
 	newReq, err := http.NewRequest(request.Method, url, request.Body)
@@ -233,8 +252,13 @@ func sendRequestWithRetry(url string, queryValues url.Values, request *http.Requ
 	for {
 		resp, err := client.Do(newReq.WithContext(request.Context()))
 		if err != nil {
+			log.Printf("Error sending request: %v\n", err)
+			if !enforce {
+				return nil, err
+			}
 			if retryCount < maxRetries {
 				retryCount++
+				log.Printf("Retrying request to %s\n", url)
 				time.Sleep(time.Duration(config.RetryDelay) * time.Second)
 				continue
 			}
@@ -265,13 +289,13 @@ func handleRequests(requests <-chan Payload, influxDBURL string) {
 		// We can even wait for the InfluxDB to be up and running before sending the requests.
 
 		retryCount := 0
-		maxRetries := 60
+		maxRetries := config.RetryCount
 		for {
 			resp, err := client.Do(newReq)
 			if err != nil {
 				if retryCount < maxRetries {
 					retryCount++
-					time.Sleep(1 * time.Second)
+					time.Sleep(time.Duration(config.RetryDelay) * time.Second)
 					continue
 				}
 				log.Println("Max retries exceeded")
