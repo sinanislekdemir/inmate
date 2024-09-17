@@ -22,6 +22,7 @@ type InfluxDBConfig struct {
 	RetryDelay   int      `yaml:"retry_delay"`
 	RetryCount   int      `yaml:"retry_count"`
 	QueryTimeout int      `yaml:"query_timeout"`
+	ChannelSize  int      `yaml:"channel_size"`
 }
 
 type Payload struct {
@@ -80,7 +81,7 @@ func loadConfig(filename string) {
 func createInstances(urls []string) []InfluxDBInstance {
 	instances := make([]InfluxDBInstance, len(urls))
 	for i, url := range urls {
-		ch := make(chan Payload, 100)
+		ch := make(chan Payload, config.ChannelSize)
 		instances[i] = InfluxDBInstance{URL: url, Channel: ch}
 		go handleRequests(ch, url)
 	}

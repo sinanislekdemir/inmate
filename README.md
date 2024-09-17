@@ -10,6 +10,18 @@ No Data Partitioning: Inmate does not partition data, which is a critical featur
 
 In summary, the Inmate project enables data synchronization across multiple InfluxDB instances, covers brief downtimes, and balances queries between nodes. However, it is not a full-fledged clustering solution. For that, InfluxDB Enterprise is required. Nonetheless, Inmate provides a degree of increased reliability and confidence.
 
+## Design
+
+The design of Inmate is straightforward. All endpoints such as `/write`, `/query`, `/api/v2/write`, and `/ping` are proxied to the InfluxDB instances.
+
+- **Write Requests:** Incoming write requests are buffered in dedicated channels for each InfluxDB instance. If an instance is unresponsive, its specific messages remain in the buffer until it can respond.
+  
+- **Read Requests:** For read requests (excluding mutations like creating or altering databases), queries are routed to a random instance in the pool. If the selected instance is unresponsive or returns an error, Inmate falls back to the next instance, continuing this process until all instances in the pool are exhausted.
+
+- **Mutation Queries:** When handling mutation queries, the system waits for responses from all instances. If any instance is down, this could introduce a delay. In the worst-case scenario, if no response is received, an error will be raised.
+
+In summary, Inmate functions as an InfluxDB gateway, distributing requests to independently running InfluxDB instances.
+
 ## Usage:
 
 ### Building the app

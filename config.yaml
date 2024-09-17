@@ -7,3 +7,4 @@ port: 8080
 retry_count: 120
 retry_delay: 1
 query_timeout: 5
+channel_size: 1000
