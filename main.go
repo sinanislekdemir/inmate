@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -225,7 +226,7 @@ func sendRequestRandomInstance(instances []InfluxDBInstance, url string, queryVa
 	instance := instances[choice]
 
 	// remove selected instance to prevent reselected againg.
-	instances = append(instances[:choice], instances[choice+1:]...)
+	instances = slices.Concat(instances[:choice], instances[choice+1:])
 
 	log.Printf("Sending request to %s\n", instance.URL)
 	resp, err := sendRequestWithRetry(instance.URL+url, queryValues, request, false)
