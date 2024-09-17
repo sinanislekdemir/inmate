@@ -56,6 +56,8 @@ func main() {
 	router.POST("/api/v2/write", handleWrite(instances))
 	router.GET("/ping", handlePing(instances))
 	router.POST("/query", handleQuery(instances))
+	router.GET("/query", handleQuery(instances))
+	router.GET("/", handleHealthCheck)
 
 	address := fmt.Sprintf("%s:%d", config.BindAddress, config.Port)
 
@@ -90,6 +92,10 @@ func handleWrite(instances []InfluxDBInstance) gin.HandlerFunc {
 		handleRequestPayload(c, instances)
 		c.JSON(http.StatusNoContent, nil)
 	}
+}
+
+func handleHealthCheck(c *gin.Context) {
+	c.JSON(http.StatusOK, map[string]interface{}{"status": "ok", "message": "InfluxDB proxy is running", "active_instances": len(config.URLs)})
 }
 
 func handlePing(instances []InfluxDBInstance) gin.HandlerFunc {

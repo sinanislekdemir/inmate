@@ -55,6 +55,25 @@ def create_database():
     else:
         print(f"Failed to create database: {response.status_code}, {response.text}")
 
+# Query data for London
+def query_data_for_london():
+    query = 'SELECT * FROM weather WHERE city=\'London\''
+    params = {
+        'db': DATABASE,
+        'u': USERNAME,
+        'p': PASSWORD,
+        'q': query
+    }
+    response = requests.get(INFLUXDB_URL + "/query", headers=HEADERS, params=params, stream=True)
+    if response.status_code == 200:
+        results = response.json()
+        print("Query results for London:")
+        for result in results.get('results', []):
+            for series in result.get('series', []):
+                for value in series.get('values', []):
+                    print(value)
+    else:
+        print(f"Failed to query data: {response.status_code}, {response.text}")
 
 # Main execution
 if __name__ == '__main__':
@@ -74,3 +93,8 @@ if __name__ == '__main__':
         batch = data_points[i:i + batch_size]
         send_batch_to_influxdb(batch)
         time.sleep(1)  # Optional delay to avoid overloading the server
+
+
+
+    # Query data after sending all batches
+    query_data_for_london()
