@@ -16,7 +16,11 @@ import (
 )
 
 type InfluxDBConfig struct {
-	URLs []string `yaml:"urls"`
+	URLs        []string `yaml:"urls"`
+	Port        int      `yaml:"port"`
+	BindAddress string   `yaml:"bind_address"`
+	RetryDelay  int      `yaml:"retry_delay"`
+	RetryCount  int      `yaml:"retry_count"`
 }
 
 type Payload struct {
@@ -40,8 +44,10 @@ func backFillHeaders(c *gin.Context, resp *http.Response) {
 	}
 }
 
+var config InfluxDBConfig
+
 func main() {
-	config := loadConfig("config.yaml")
+	loadConfig("config.yaml")
 	instances := createInstances(config.URLs)
 	router := gin.Default()
 
@@ -50,23 +56,22 @@ func main() {
 	router.GET("/ping", handlePing(instances))
 	router.POST("/query", handleQuery(instances))
 
-	if err := router.Run(":8080"); err != nil {
+	address := fmt.Sprintf("%s:%d", config.BindAddress, config.Port)
+
+	if err := router.Run(address); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func loadConfig(filename string) InfluxDBConfig {
+func loadConfig(filename string) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		log.Fatalf("Error reading config file: %v", err)
 	}
 
-	var config InfluxDBConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		log.Fatalf("Error parsing config file: %v", err)
 	}
-
-	return config
 }
 
 func createInstances(urls []string) []InfluxDBInstance {
@@ -224,13 +229,13 @@ func sendRequestWithRetry(url string, queryValues url.Values, request *http.Requ
 	// We can even wait for the InfluxDB to be up and running before sending the requests.
 
 	retryCount := 0
-	maxRetries := 60
+	maxRetries := config.RetryCount
 	for {
 		resp, err := client.Do(newReq.WithContext(request.Context()))
 		if err != nil {
 			if retryCount < maxRetries {
 				retryCount++
-				time.Sleep(1 * time.Second)
+				time.Sleep(time.Duration(config.RetryDelay) * time.Second)
 				continue
 			}
 			return nil, err

@@ -15,7 +15,7 @@ Inmate is the Influxdb v1 data sync tool for partial fault tolerance.
 
     docker compose up
 
-Exposes the API over port `8080`. Connect with `influx -p 8080`
+Exposes the API over port `8080`. Connect with `influx -port 8080`
 
 ## Note
 

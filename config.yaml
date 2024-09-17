@@ -1,3 +1,7 @@
 urls:
   - http://influxdb1:8086
   - http://influxdb2:8086
+bind_address: 0.0.0.0
+port: 8080
+retry_count: 120
+retry_delay: 1
