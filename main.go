@@ -200,7 +200,7 @@ func handleRequestPayload(c *gin.Context, instances []InfluxDBInstance) {
 	}
 	for _, instance := range instances {
 		instance.Channel <- payload
-		fmt.Println("Request buffered for", instance.URL)
+		log.Println("Request sent to", instance.URL)
 	}
 }
 
@@ -300,6 +300,14 @@ func handleRequests(requests <-chan Payload, influxDBURL string) {
 				}
 				log.Println("Max retries exceeded")
 				break
+			}
+			// Print response body
+			if resp.StatusCode > 299 {
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					log.Println("Error reading response body:", err)
+				}
+				log.Println("Response body:", string(body))
 			}
 			defer resp.Body.Close()
 			log.Println("InfluxDB response:", resp.StatusCode)
