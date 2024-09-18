@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -8,8 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -52,7 +55,9 @@ var config InfluxDBConfig
 func main() {
 	loadConfig("config.yaml")
 	instances := createInstances(config.URLs)
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(MaskedLogger())
 
 	router.POST("/write", handleWrite(instances))
 	router.POST("/api/v2/write", handleWrite(instances))
@@ -63,9 +68,72 @@ func main() {
 
 	address := fmt.Sprintf("%s:%d", config.BindAddress, config.Port)
 
-	if err := router.Run(address); err != nil {
-		log.Fatal(err)
+	server := &http.Server{
+		Addr:    address,
+		Handler: router,
 	}
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, os.Signal(syscall.SIGTERM), syscall.SIGINT)
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("ListenAndServe error: %s\n", err)
+		}
+	}()
+	log.Printf("InfluxDB proxy is running on %s\n", address)
+	<-quit
+	log.Println("Shutting down InfluxDB proxy")
+
+	for _, instance := range instances {
+		close(instance.Channel)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Error shutting down server: %v", err)
+	}
+	log.Println("InfluxDB proxy stopped")
+}
+
+// MaskedLogger will mask sensitive query string parameters
+func MaskedLogger() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Start time
+		start := time.Now()
+
+		// Process request
+		c.Next()
+
+		// End time
+		end := time.Now()
+		latency := end.Sub(start)
+
+		// Sanitize query string by masking sensitive parameters
+		sanitizedURL := maskQueryParams(c.Request.URL)
+
+		// Log the sanitized request
+		log.Printf("GIN: [%s] %s %s in %v", c.Request.Method, sanitizedURL, c.ClientIP(), latency)
+	}
+}
+
+// maskQueryParams masks sensitive parameters in the query string
+func maskQueryParams(u *url.URL) string {
+	// List of sensitive parameters
+	sensitiveParams := []string{"u", "token", "p"}
+
+	query := u.Query()
+
+	// Mask sensitive parameters
+	for _, param := range sensitiveParams {
+		if query.Has(param) {
+			query.Set(param, "hidden")
+		}
+	}
+
+	// Build the sanitized URL
+	u.RawQuery = query.Encode()
+	return u.String()
 }
 
 func loadConfig(filename string) {
@@ -238,22 +306,19 @@ func sendRequestRandomInstance(instances []InfluxDBInstance, url string, queryVa
 }
 
 func sendRequestWithRetry(url string, queryValues url.Values, request *http.Request, enforce bool) (*http.Response, error) {
-	log.Printf("Sending request to %s with query values: %v\n", url, queryValues)
+	log.Printf("Sending request to %s, query string %s\n", url, queryValues.Get("q"))
 	client := &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 		},
 		Timeout: time.Duration(config.QueryTimeout) * time.Second,
 	}
-	url += "?" + queryValues.Encode()
-	newReq, err := http.NewRequest(request.Method, url, request.Body)
+	fullUrl := url + "?" + queryValues.Encode()
+	newReq, err := http.NewRequest(request.Method, fullUrl, request.Body)
 	if err != nil {
 		return nil, err
 	}
 	newReq.Header = request.Header.Clone()
-
-	// TODO: Implement exponential backoff and increase the max retries.
-	// We can even wait for the InfluxDB to be up and running before sending the requests.
 
 	retryCount := 0
 	maxRetries := config.RetryCount
@@ -272,7 +337,7 @@ func sendRequestWithRetry(url string, queryValues url.Values, request *http.Requ
 			}
 			return nil, err
 		}
-		log.Println("InfluxDB response:", resp.StatusCode)
+		log.Printf("InfluxDB [%s] response: %d\n", url, resp.StatusCode)
 		return resp, nil
 	}
 }
@@ -292,9 +357,6 @@ func handleRequests(requests <-chan Payload, influxDBURL string) {
 			continue
 		}
 		newReq.Header = req.Header.Clone()
-
-		// TODO: Implement exponential backoff and increase the max retries.
-		// We can even wait for the InfluxDB to be up and running before sending the requests.
 
 		retryCount := 0
 		maxRetries := config.RetryCount
@@ -318,7 +380,7 @@ func handleRequests(requests <-chan Payload, influxDBURL string) {
 				log.Println("Response body:", string(body))
 			}
 			defer resp.Body.Close()
-			log.Println("InfluxDB response:", resp.StatusCode)
+			log.Printf("InfluxDB [%s] response: %d\n", influxDBURL, resp.StatusCode)
 			break
 		}
 	}
