@@ -8,6 +8,18 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+func AuthMiddleware(token string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Check if the request has the correct token
+		if c.GetHeader("Authorization") != "Token "+token {
+			c.JSON(401, gin.H{"error": "Unauthorized"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 // MaskedLogger will mask sensitive query string parameters
 func MaskedLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {

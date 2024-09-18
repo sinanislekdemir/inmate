@@ -26,6 +26,7 @@ type Payload struct {
 
 type InfluxDBInstance struct {
 	URL     string
+	Token   string
 	Channel chan Payload
 }
 
@@ -33,17 +34,49 @@ func main() {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 
 	LoadConfig("config.yaml")
-	instances := createInstances(config.URLs)
+	instances := createInstances(config.Addresses)
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(MaskedLogger())
+	// if config.AuthToken is set, check for the token in the request
+	if config.AuthToken != "" {
+		router.Use(AuthMiddleware(config.AuthToken))
+		logrus.Info("Auth middleware enabled")
+	}
 
 	router.POST("/write", handleWrite(instances))
-	router.POST("/api/v2/write", handleWrite(instances))
-	router.GET("/ping", handlePing(instances))
+	router.GET("/ping", handleGet(instances))
+	router.GET("/health", handleGet(instances))
 	router.POST("/query", handleQuery(instances))
 	router.GET("/query", handleQuery(instances))
+
+	// V2 Compatibilities, UI is not supported!
+	router.POST("/api/v2/write", handleWrite(instances))
+	router.POST("/api/v2/bucket", handleMutationGin(instances))
+	router.POST("/api/v2/delete", handleMutationGin(instances))
+
+	router.GET("/api/v2/query", handleQuery(instances))
+	router.POST("/api/v2/query", handleQuery(instances))
+
+	router.GET("/api/v2/tasks", handleGet(instances))
+	router.POST("/api/v2/tasks", handleMutationGin(instances))
+
+	router.GET("/api/v2/tasks/*any", handleGet(instances))
+	router.POST("/api/v2/tasks/*any", handleMutationGin(instances))
+
+	router.GET("/api/v2/authorizations", handleFeatureNotSupported)
+	router.POST("/api/v2/authorizations", handleFeatureNotSupported)
+	router.GET("/api/v2/authorizations/*any", handleFeatureNotSupported)
+	router.POST("/api/v2/authorizations/*any", handleFeatureNotSupported)
+	router.DELETE("/api/v2/authorizations/*any", handleFeatureNotSupported)
+	router.PATCH("/api/v2/authorizations/*any", handleFeatureNotSupported)
+
+	router.GET("/api/v2/orgs", handleGet(instances))
+	router.GET("/api/v2/orgs/*any", handleGet(instances))
+	router.DELETE("/api/v2/orgs/*any", handleFeatureNotSupported)
 	router.GET("/", handleHealthCheck)
+
+	router.NoRoute(handleFeatureNotSupported)
 
 	address := fmt.Sprintf("%s:%d", config.BindAddress, config.Port)
 
@@ -89,34 +122,37 @@ func main() {
 	logrus.Info("InfluxDB proxy stopped")
 }
 
-func createInstances(urls []string) []InfluxDBInstance {
-	instances := make([]InfluxDBInstance, len(urls))
-	for i, url := range urls {
+func createInstances(addresses []Address) []InfluxDBInstance {
+	instances := make([]InfluxDBInstance, len(addresses))
+	for i, address := range addresses {
 		ch := make(chan Payload, config.ChannelSize)
-		instances[i] = InfluxDBInstance{URL: url, Channel: ch}
-		go handleRequests(ch, url)
+		instances[i] = InfluxDBInstance{URL: address.Url, Token: address.Token, Channel: ch}
+		go handleRequests(ch, address)
 	}
 	return instances
 }
 
-func handleRequests(requests <-chan Payload, influxDBURL string) {
+func handleRequests(requests <-chan Payload, influxDBURL Address) {
 	client := &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 		},
 	}
 	for req := range requests {
-		url := influxDBURL + req.URLPath
+		url := influxDBURL.Url + req.URLPath
 		url += "?" + req.QueryParams.Encode()
 		newReq, err := http.NewRequest(req.Method, url, strings.NewReader(string(req.Body)))
 		if err != nil {
 			logrus.WithFields(logrus.Fields{
 				"error": err,
-				"url":   influxDBURL,
+				"url":   influxDBURL.Url,
 			}).Error("Error creating request")
 			continue
 		}
 		newReq.Header = req.Header.Clone()
+		if influxDBURL.Token != "" {
+			newReq.Header["Authorization"] = []string{"Token " + influxDBURL.Token}
+		}
 
 		retryCount := 0
 		maxRetries := config.RetryCount
@@ -130,7 +166,7 @@ func handleRequests(requests <-chan Payload, influxDBURL string) {
 				}
 				logrus.WithFields(logrus.Fields{
 					"error": err,
-					"url":   influxDBURL,
+					"url":   influxDBURL.Url,
 				}).Error("Max retries exceeded")
 				break
 			}
@@ -140,7 +176,7 @@ func handleRequests(requests <-chan Payload, influxDBURL string) {
 				if err != nil {
 					logrus.WithFields(logrus.Fields{
 						"error": err,
-						"url":   influxDBURL,
+						"url":   influxDBURL.Url,
 					}).Error("Error reading response body")
 				}
 				logrus.WithFields(logrus.Fields{
@@ -151,7 +187,7 @@ func handleRequests(requests <-chan Payload, influxDBURL string) {
 			defer resp.Body.Close()
 			logrus.WithFields(logrus.Fields{
 				"status": resp.StatusCode,
-				"url":    influxDBURL,
+				"url":    influxDBURL.Url,
 			}).Info("InfluxDB response")
 			break
 		}

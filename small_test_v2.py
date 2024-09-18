@@ -2,13 +2,14 @@ import requests
 import time
 from datetime import datetime
 
-# Configuration for InfluxDB v1.8
-INFLUXDB_URL = 'http://localhost:8080'  # Replace with your InfluxDB URL
-DATABASE = 'mydb'                             # Replace with your database name
-USERNAME = 'admin'                            # Replace with your username (if applicable)
-PASSWORD = 'password'                         # Replace with your password (if applicable)
- 
+# Configuration for InfluxDB v2
+INFLUXDB_URL = 'http://localhost:8080'    # Replace with your InfluxDB URL
+ORG = 'myorg'                             # Replace with your organization name
+BUCKET = 'temp'                           # Replace with your bucket name
+TOKEN = '123456'                          # Replace with your authentication token
+
 HEADERS = {
+    'Authorization': f'Token {TOKEN}',
     'Content-Type': 'text/plain; charset=utf-8'
 }
 
@@ -32,46 +33,34 @@ def generate_data_points(start_timestamp, num_points):
 def send_batch_to_influxdb(batch):
     data = '\n'.join(batch)
     params = {
-        'db': DATABASE,
-        'u': USERNAME,
-        'p': PASSWORD,
+        'org': ORG,
+        'bucket': BUCKET,
         'precision': 'ns'
     }
-    response = requests.post(INFLUXDB_URL + "/write", headers=HEADERS, params=params, data=data)
+    response = requests.post(INFLUXDB_URL + "/api/v2/write", headers=HEADERS, params=params, data=data)
     if response.status_code == 204:
         print("Batch successfully written to InfluxDB.")
     else:
         print(f"Failed to write batch: {response.status_code}, {response.text}")
 
-def create_database():
-    params = {
-        'q': f"CREATE DATABASE {DATABASE}",
-        'u': USERNAME,
-        'p': PASSWORD,
-    }
-    response = requests.post(INFLUXDB_URL + "/query", headers=HEADERS, params=params)
-    if response.status_code == 200:
-        print("Database created successfully.")
-    else:
-        print(f"Failed to create database: {response.status_code}, {response.text}")
-
-# Query data for London
+# Query data for London using Flux
 def query_data_for_london():
-    query = 'SELECT * FROM weather WHERE city=\'London\''
+    query = f'''
+    from(bucket: "{BUCKET}")
+        |> range(start: -1h)
+        |> filter(fn: (r) => r._measurement == "weather" and r.city == "London")
+    '''
     params = {
-        'db': DATABASE,
-        'u': USERNAME,
-        'p': PASSWORD,
-        'q': query
+        'org': ORG
     }
-    response = requests.get(INFLUXDB_URL + "/query", headers=HEADERS, params=params, stream=True)
+    response = requests.post(INFLUXDB_URL + "/api/v2/query", headers={
+        'Authorization': f'Bearer {TOKEN}',
+        'Content-Type': 'application/vnd.flux',
+        'Accept': 'application/json',
+    }, params=params, data=query)
+    
     if response.status_code == 200:
-        results = response.json()
-        print("Query results for London:")
-        for result in results.get('results', []):
-            for series in result.get('series', []):
-                for value in series.get('values', []):
-                    print(value)
+        print(response.content)
     else:
         print(f"Failed to query data: {response.status_code}, {response.text}")
 
@@ -80,8 +69,6 @@ if __name__ == '__main__':
     # Start timestamp from current time
     start_datetime = datetime.now()
     start_timestamp_ns = int(start_datetime.timestamp() * 1_000_000_000)
-
-    # create_database()
 
     # Generate 10,000 data points
     total_data_points = 10_000

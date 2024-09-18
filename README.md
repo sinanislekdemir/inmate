@@ -1,5 +1,5 @@
 # inmate
-Inmate is the Influxdb v1 data sync tool for partial fault tolerance.
+Inmate is the Influxdb v1 and v2 data sync tool for partial fault tolerance.
 
 InfluxDB OSS operates as a single-instance database. The Inmate project enhances data resilience by allowing multiple InfluxDB nodes to run concurrently. However, it comes with some limitations:
 
@@ -44,3 +44,36 @@ All headers are directly forwarded to the influxdb instances including Auth head
 Therefore, there is no need to explicitly configure the auth credentials inside the inmage.
 
 `config.yaml` includes `influxdb3` on purpose. I am testing the "down node" scenario with that config.
+
+### Influxdb V2
+
+Attention! Not all API endpoints are supported by inmate. But it will give you at least read/write operations fine.
+
+## Configuration notes
+
+In the configuration, the token is required only for InfluxDB v2. For InfluxDB v1, you can use the same authentication for all instances, as authorization parameters are directly forwarded to the InfluxDB instances. However, this is not possible with v2, as it generates random tokens that cannot be modified. Therefore, you must explicitly define tokens for each instance in the config.
+
+Additionally, you can set a global `auth_token` in the configuration. If you prefer not to hardcode your token (protecting Inmate with `Authorization: Token <token>`), you can define it using the `AUTH_TOKEN` environment variable.
+
+### Example config
+
+    # Please generate your own tokens in each instance separately and replace it with the example token below
+    # The tokens below are just examples and will not work
+    # You can generate from the influxdb UI by http://localhost:8086 for influxdb1 and http://localhost:8087 for influxdb2
+    
+    addresses:
+      - url: http://influxdb1:8086
+        token: bGFgMnt42CrFEKO2mNHIAX55Qp8ENrLI643QHGZ-Uwo7pgSdYKt1_S7aqcpMYS7qySsOXSP-z6Ip3rGjVeLVvA==
+      - url: http://influxdb2:8086
+        token: KXlUtzPwoWvhDA-d-BqGHMp4O-stQrdLn6AyftmzOo_WZ_IOIUkMs2TB8sBHz7t28_oKQlFo1prlyRI2OMrV1w==
+    bind_address: 0.0.0.0
+    port: 8080
+    retry_count: 120
+    retry_delay: 1
+    query_timeout: 5
+    channel_size: 1000
+    auth_token: 123456
+
+### Example request
+
+    curl http://localhost:8080/health -v -H "Authorization: Token 123456"

@@ -25,7 +25,7 @@ func sendRequestRandomInstance(instances []InfluxDBInstance, url string, queryVa
 	logrus.WithFields(logrus.Fields{
 		"instance": instance.URL,
 	}).Info("Sending request")
-	resp, err := sendRequestWithRetry(instance.URL+url, queryValues, request, false)
+	resp, err := sendRequestWithRetry(instance.URL+url, instance.Token, queryValues, request, false)
 	if err != nil {
 		return sendRequestRandomInstance(instances, url, queryValues, request)
 	}
@@ -33,7 +33,7 @@ func sendRequestRandomInstance(instances []InfluxDBInstance, url string, queryVa
 	return resp, err
 }
 
-func sendRequestWithRetry(url string, queryValues url.Values, request *http.Request, enforce bool) (*http.Response, error) {
+func sendRequestWithRetry(url string, token string, queryValues url.Values, request *http.Request, enforce bool) (*http.Response, error) {
 	logrus.WithFields(logrus.Fields{
 		"url": url,
 		"q":   queryValues.Get("q"),
@@ -51,6 +51,10 @@ func sendRequestWithRetry(url string, queryValues url.Values, request *http.Requ
 		return nil, err
 	}
 	newReq.Header = request.Header.Clone()
+
+	if token != "" {
+		newReq.Header["Authorization"] = []string{"Token " + token}
+	}
 
 	retryCount := 0
 	maxRetries := config.RetryCount

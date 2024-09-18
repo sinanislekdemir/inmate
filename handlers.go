@@ -25,10 +25,10 @@ func handleWrite(instances []InfluxDBInstance) gin.HandlerFunc {
 }
 
 func handleHealthCheck(c *gin.Context) {
-	c.JSON(http.StatusOK, map[string]interface{}{"status": "ok", "message": "InfluxDB proxy is running", "active_instances": len(config.URLs)})
+	c.JSON(http.StatusOK, map[string]interface{}{"status": "ok", "message": "InfluxDB proxy is running", "active_instances": len(config.Addresses)})
 }
 
-func handlePing(instances []InfluxDBInstance) gin.HandlerFunc {
+func handleGet(instances []InfluxDBInstance) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		resp, err := sendRequestRandomInstance(instances, c.Request.URL.Path, c.Request.URL.Query(), c.Request)
 		if err != nil {
@@ -86,6 +86,16 @@ func isMutation(query string) bool {
 	return false
 }
 
+func handleMutationGin(instances []InfluxDBInstance) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		handleMutation(c, instances)
+	}
+}
+
+func handleFeatureNotSupported(c *gin.Context) {
+	c.JSON(http.StatusNotImplemented, map[string]string{"error": "Feature not supported"})
+}
+
 func handleMutation(c *gin.Context, instances []InfluxDBInstance) {
 	queryParams := c.Request.URL.Query()
 	isFirst := true
@@ -94,7 +104,7 @@ func handleMutation(c *gin.Context, instances []InfluxDBInstance) {
 
 	for _, instance := range instances {
 		url := instance.URL + c.Request.URL.Path
-		resp, err := sendRequestWithRetry(url, queryParams, c.Request, true)
+		resp, err := sendRequestWithRetry(url, instance.Token, queryParams, c.Request, true)
 		if err != nil {
 			handleError(c, err)
 			return

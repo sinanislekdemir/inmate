@@ -1,10 +1,16 @@
-urls:
-  - http://influxdb1:8086
-  - http://influxdb2:8086
-  - http://influxdb3:8086
+# Please generate your own tokens in each instance separately and replace it with the example token below
+# The tokens below are just examples and will not work
+# You can generate from the influxdb UI by http://localhost:8086 for influxdb1 and http://localhost:8087 for influxdb2
+
+addresses:
+  - url: http://influxdb1:8086
+    token: <influxdb1_token if using influxdb v2, otherwise empty>
+  - url: http://influxdb2:8086
+    token: <influxdb1_token if using influxdb v2, otherwise empty>
 bind_address: 0.0.0.0
 port: 8080
 retry_count: 120
 retry_delay: 1
 query_timeout: 5
 channel_size: 1000
+auth_token:

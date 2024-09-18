@@ -7,14 +7,20 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type Address struct {
+	Url   string `yaml:"url"`
+	Token string `yaml:"token"`
+}
+
 type InfluxDBConfig struct {
-	URLs         []string `yaml:"urls"`
-	Port         int      `yaml:"port"`
-	BindAddress  string   `yaml:"bind_address"`
-	RetryDelay   int      `yaml:"retry_delay"`
-	RetryCount   int      `yaml:"retry_count"`
-	QueryTimeout int      `yaml:"query_timeout"`
-	ChannelSize  int      `yaml:"channel_size"`
+	Addresses    []Address `yaml:"addresses"`
+	Port         int       `yaml:"port"`
+	BindAddress  string    `yaml:"bind_address"`
+	RetryDelay   int       `yaml:"retry_delay"`
+	RetryCount   int       `yaml:"retry_count"`
+	QueryTimeout int       `yaml:"query_timeout"`
+	ChannelSize  int       `yaml:"channel_size"`
+	AuthToken    string    `yaml:"auth_token"`
 }
 
 var config InfluxDBConfig
@@ -35,4 +41,10 @@ func LoadConfig(filename string) {
 			"filename": filename,
 		}).Fatal("Error parsing config file")
 	}
+
+	// If AuthToken is not set in the config file, check if it is set in the environment
+	if config.AuthToken == "" {
+		config.AuthToken = os.Getenv("AUTH_TOKEN")
+	}
+
 }
