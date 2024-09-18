@@ -2,11 +2,11 @@ package main
 
 import (
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 func backFillHeaders(c *gin.Context, resp *http.Response) {
@@ -58,7 +58,9 @@ func handleQuery(instances []InfluxDBInstance) gin.HandlerFunc {
 
 		resp, err := sendRequestRandomInstance(instances, c.Request.URL.Path, queryParams, c.Request)
 		if err != nil {
-			log.Printf("Error sending request: %v\n", err)
+			logrus.WithFields(logrus.Fields{
+				"error": err,
+			}).Error("Error sending request")
 			handleError(c, err)
 			return
 		}
@@ -136,11 +138,16 @@ func handleRequestPayload(c *gin.Context, instances []InfluxDBInstance) {
 	}
 	for _, instance := range instances {
 		instance.Channel <- payload
-		log.Println("Request sent to", instance.URL)
+		logrus.WithFields(logrus.Fields{
+			"url": instance.URL,
+		}).Info("Request sent")
 	}
 }
 
 func handleError(c *gin.Context, err error) {
-	log.Println("Error:", err)
+	logrus.WithFields(logrus.Fields{
+		"error": err,
+	}).Error("Error processing request")
+
 	c.JSON(http.StatusInternalServerError, nil)
 }

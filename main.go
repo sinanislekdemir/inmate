@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 type Payload struct {
@@ -30,6 +30,8 @@ type InfluxDBInstance struct {
 }
 
 func main() {
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+
 	LoadConfig("config.yaml")
 	instances := createInstances(config.URLs)
 	router := gin.New()
@@ -54,12 +56,24 @@ func main() {
 	signal.Notify(quit, os.Interrupt, os.Signal(syscall.SIGTERM), syscall.SIGINT)
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("ListenAndServe error: %s\n", err)
+			logrus.WithFields(logrus.Fields{
+				"error": err,
+			}).Error("ListenAndServe error")
 		}
 	}()
-	log.Printf("InfluxDB proxy is running on %s\n", address)
-	<-quit
-	log.Println("Shutting down InfluxDB proxy")
+
+	logrus.WithFields(logrus.Fields{
+		"address": address,
+		"started": time.Now(),
+	}).Info("InfluxDB proxy is running")
+
+	received := <-quit
+
+	logrus.WithFields(logrus.Fields{
+		"address": address,
+		"stopped": time.Now(),
+		"signal":  received,
+	}).Info("Shutting down InfluxDB proxy")
 
 	for _, instance := range instances {
 		close(instance.Channel)
@@ -68,9 +82,11 @@ func main() {
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Error shutting down server: %v", err)
+		logrus.WithFields(logrus.Fields{
+			"error": err,
+		}).Error("Error shutting down server")
 	}
-	log.Println("InfluxDB proxy stopped")
+	logrus.Info("InfluxDB proxy stopped")
 }
 
 func createInstances(urls []string) []InfluxDBInstance {
@@ -94,7 +110,10 @@ func handleRequests(requests <-chan Payload, influxDBURL string) {
 		url += "?" + req.QueryParams.Encode()
 		newReq, err := http.NewRequest(req.Method, url, strings.NewReader(string(req.Body)))
 		if err != nil {
-			log.Println("Error creating request:", err)
+			logrus.WithFields(logrus.Fields{
+				"error": err,
+				"url":   influxDBURL,
+			}).Error("Error creating request")
 			continue
 		}
 		newReq.Header = req.Header.Clone()
@@ -109,19 +128,31 @@ func handleRequests(requests <-chan Payload, influxDBURL string) {
 					time.Sleep(time.Duration(config.RetryDelay) * time.Second)
 					continue
 				}
-				log.Println("Max retries exceeded")
+				logrus.WithFields(logrus.Fields{
+					"error": err,
+					"url":   influxDBURL,
+				}).Error("Max retries exceeded")
 				break
 			}
 			// Print response body
 			if resp.StatusCode > 299 {
 				body, err := io.ReadAll(resp.Body)
 				if err != nil {
-					log.Println("Error reading response body:", err)
+					logrus.WithFields(logrus.Fields{
+						"error": err,
+						"url":   influxDBURL,
+					}).Error("Error reading response body")
 				}
-				log.Println("Response body:", string(body))
+				logrus.WithFields(logrus.Fields{
+					"status": resp.StatusCode,
+					"body":   string(body),
+				}).Debug("InfluxDB response")
 			}
 			defer resp.Body.Close()
-			log.Printf("InfluxDB [%s] response: %d\n", influxDBURL, resp.StatusCode)
+			logrus.WithFields(logrus.Fields{
+				"status": resp.StatusCode,
+				"url":    influxDBURL,
+			}).Info("InfluxDB response")
 			break
 		}
 	}

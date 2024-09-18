@@ -1,11 +1,11 @@
 package main
 
 import (
-	"log"
 	"net/url"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 )
 
 // MaskedLogger will mask sensitive query string parameters
@@ -25,7 +25,12 @@ func MaskedLogger() gin.HandlerFunc {
 		sanitizedURL := maskQueryParams(c.Request.URL)
 
 		// Log the sanitized request
-		log.Printf("GIN: [%s] %s %s in %v", c.Request.Method, sanitizedURL, c.ClientIP(), latency)
+		logrus.WithFields(logrus.Fields{
+			"method":   c.Request.Method,
+			"url":      sanitizedURL,
+			"clientIP": c.ClientIP(),
+			"latency":  latency,
+		}).Info("Request processed")
 	}
 }
 

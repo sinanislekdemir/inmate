@@ -1,9 +1,9 @@
 package main
 
 import (
-	"log"
 	"os"
 
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
@@ -22,11 +22,17 @@ var config InfluxDBConfig
 func LoadConfig(filename string) {
 	configData, err := os.ReadFile(filename)
 	if err != nil {
-		log.Fatalf("Error reading config file: %v", err)
+		logrus.WithFields(logrus.Fields{
+			"filename": filename,
+			"error":    err,
+		}).Fatal("Error reading config file")
 	}
 
 	err = yaml.Unmarshal(configData, &config)
 	if err != nil {
-		log.Fatalf("Error parsing config file: %v", err)
+		logrus.WithFields(logrus.Fields{
+			"error":    err,
+			"filename": filename,
+		}).Fatal("Error parsing config file")
 	}
 }

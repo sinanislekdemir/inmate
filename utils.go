@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"slices"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func sendRequestRandomInstance(instances []InfluxDBInstance, url string, queryValues url.Values, request *http.Request) (*http.Response, error) {
@@ -21,7 +22,9 @@ func sendRequestRandomInstance(instances []InfluxDBInstance, url string, queryVa
 	// remove selected instance to prevent reselected againg.
 	instances = slices.Concat(instances[:choice], instances[choice+1:])
 
-	log.Printf("Sending request to %s\n", instance.URL)
+	logrus.WithFields(logrus.Fields{
+		"instance": instance.URL,
+	}).Info("Sending request")
 	resp, err := sendRequestWithRetry(instance.URL+url, queryValues, request, false)
 	if err != nil {
 		return sendRequestRandomInstance(instances, url, queryValues, request)
@@ -31,7 +34,11 @@ func sendRequestRandomInstance(instances []InfluxDBInstance, url string, queryVa
 }
 
 func sendRequestWithRetry(url string, queryValues url.Values, request *http.Request, enforce bool) (*http.Response, error) {
-	log.Printf("Sending request to %s, query string %s\n", url, queryValues.Get("q"))
+	logrus.WithFields(logrus.Fields{
+		"url": url,
+		"q":   queryValues.Get("q"),
+	}).Info("Sending request")
+
 	client := &http.Client{
 		Transport: &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
@@ -50,19 +57,29 @@ func sendRequestWithRetry(url string, queryValues url.Values, request *http.Requ
 	for {
 		resp, err := client.Do(newReq.WithContext(request.Context()))
 		if err != nil {
-			log.Printf("Error sending request: %v\n", err)
+			logrus.WithFields(logrus.Fields{
+				"error": err,
+				"url":   url,
+			}).Error("Error sending request")
+
 			if !enforce {
 				return nil, err
 			}
 			if retryCount < maxRetries {
 				retryCount++
-				log.Printf("Retrying request to %s\n", url)
+				logrus.WithFields(logrus.Fields{
+					"retryCount": retryCount,
+					"url":        url,
+				}).Info("Retrying request")
 				time.Sleep(time.Duration(config.RetryDelay) * time.Second)
 				continue
 			}
 			return nil, err
 		}
-		log.Printf("InfluxDB [%s] response: %d\n", url, resp.StatusCode)
+		logrus.WithFields(logrus.Fields{
+			"status": resp.StatusCode,
+			"url":    url,
+		}).Info("InfluxDB response")
 		return resp, nil
 	}
 }
