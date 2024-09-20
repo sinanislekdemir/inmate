@@ -64,13 +64,6 @@ func main() {
 	router.GET("/api/v2/tasks/*any", handleGet(instances))
 	router.POST("/api/v2/tasks/*any", handleMutationGin(instances))
 
-	router.GET("/api/v2/authorizations", handleFeatureNotSupported)
-	router.POST("/api/v2/authorizations", handleFeatureNotSupported)
-	router.GET("/api/v2/authorizations/*any", handleFeatureNotSupported)
-	router.POST("/api/v2/authorizations/*any", handleFeatureNotSupported)
-	router.DELETE("/api/v2/authorizations/*any", handleFeatureNotSupported)
-	router.PATCH("/api/v2/authorizations/*any", handleFeatureNotSupported)
-
 	router.GET("/api/v2/orgs", handleGet(instances))
 	router.GET("/api/v2/orgs/*any", handleGet(instances))
 	router.DELETE("/api/v2/orgs/*any", handleFeatureNotSupported)
