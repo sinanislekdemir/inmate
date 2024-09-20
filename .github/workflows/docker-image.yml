@@ -28,6 +28,12 @@ jobs:
       uses: docker/metadata-action@v5
       with:
         images: sinanislekdemir/inmate
+
+    - name: Extract tag version
+      id: extract_tag
+      run: |
+        TAG_NAME=${GITHUB_REF#refs/tags/}
+        echo "::set-output name=tag::$TAG_NAME"
       
     - name: Build the Docker image
       id: push
@@ -36,5 +42,5 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: sinanislekdemir/inmate:latest
+        tags: sinanislekdemir/inmate:${{ steps.extract_tag.outputs.tag }} , sinanislekdemir/inmate:latest
     
